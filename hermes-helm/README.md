@@ -1,134 +1,115 @@
 # Hermes Agent Helm Chart
 
-Deploy [Hermes Agent](https://hermes-agent.nousresearch.com/) and [Hermes Web UI](https://github.com/EKKOLearnAI/hermes-web-ui) on Kubernetes.
+Production-ready Helm chart for [Hermes Web UI](https://github.com/EKKOLearnAI/hermes-web-ui) on Kubernetes.
+
+The Web UI image is built on top of [Hermes Agent](https://hermes-agent.nousresearch.com/)
+(`FROM nousresearch/hermes-agent`) and bundles the **full Agent**, the Playwright/Chromium
+headless browser, and all tooling in a **single container**. The chart therefore deploys
+**one pod** — the Web UI manages its own internal Hermes gateway. There is no separate Agent
+deployment.
 
 ## Architecture
 
 ```
-┌──────────────────────────────────────────────┐
-│                   Ingress                     │
-│              hermes.example.com               │
-│            / → Web UI  :8648                  │
-│           /api → Agent API :8642              │
-└──────────────┬───────────────┬────────────────┘
-               │               │
-    ┌──────────▼──────┐  ┌────▼──────────────┐
-    │  Hermes Web UI  │  │   Hermes Agent    │
-    │  (Deployment)   │──│   (Deployment)    │
-    │  Port: 8648     │  │   Ports: 8642,9119│
-    │  Image:         │  │   Image:           │
-    │  ekkoye8888/    │  │   nousresearch/    │
-    │  hermes-web-ui  │  │   hermes-agent     │
-    └────────┬────────┘  └────────┬───────────┘
-             │                    │
-             └──────────┬─────────┘
-                        │
-              ┌─────────▼──────────┐
-              │    Persistent      │
-              │   Volume Claim     │
-              │   /opt/data        │
-              │   (config, keys,   │
-              │    sessions, logs) │
-              └────────────────────┘
+ Browser
+    │
+ ┌──┴────────────────────────────────────────────────┐
+ │ Kubernetes Cluster                                 │
+ │  Traefik / Ingress (optional)                      │
+ │  hermes.example.com → Web UI :8648                 │
+ │                                                    │
+ │  ┌──────────────────────────────────────────────┐ │
+ │  │           Hermes Web UI (single pod)          │ │
+ │  │  ┌──────────────┐   ┌────────────────────┐   │ │
+ │  │  │  Web UI      │   │  Hermes Agent      │   │ │
+ │  │  │  Vue + Koa   │◀─▶│  (managed gateway) │───┼─┼──▶ LLM APIs
+ │  │  │  :8648       │   │  :8642 (internal)  │   │ │
+ │  │  └──────────────┘   └────────────────────┘   │ │
+ │  │  ┌────────────────────────────────────────┐  │ │
+ │  │  │  Persistent Volume                     │  │ │
+ │  │  │  /home/agent/.hermes                   │  │ │
+ │  │  │  (config, sessions, skills, memory)    │  │ │
+ │  │  └────────────────────────────────────────┘  │ │
+ │  └──────────────────────────────────────────────┘ │
+ └────────────────────────────────────────────────────┘
 ```
 
 ## Prerequisites
 
 - Kubernetes 1.19+
 - Helm 3.8+
-- Persistent storage provisioner (for the data volume)
-- API keys for Anthropic and/or OpenAI
+- A persistent storage provisioner (for the data volume)
+- An Anthropic and/or OpenAI API key
 
 ## Quick Start
 
-### 1. Create a values override file
+```bash
+helm repo add hermes-agent https://0xbitwild.github.io/Hermes-Agent-Helm-Chart/
+helm repo update
+
+helm install hermes hermes-agent/hermes-agent \
+  --set secrets.anthropicApiKey="sk-ant-..." \
+  --set traefik.enabled=true \
+  --set traefik.host="hermes.example.com" \
+  --set traefik.tlsSecretName="example-tls"
+```
+
+Or with a values override file:
 
 ```yaml
 # my-values.yaml
 secrets:
-  anthropicApiKey: "sk-ant-..."      # Your Anthropic API key
-  openaiApiKey: "sk-..."             # Your OpenAI API key (optional)
-  apiServerKey: "my-secret-key-123"  # Min 8 chars, required for API server
-  webuiAuthToken: ""                 # Auto-generated if empty
-
-hermes:
-  dashboard:
-    enabled: true
-    basicAuthUsername: "admin"
-    basicAuthPassword: "changeme"
-
-webui:
-  env:
-    CORS_ORIGINS: "*"
+  anthropicApiKey: "sk-ant-..."   # required
+  openaiApiKey: "sk-..."          # optional
+  # apiServerKey / webuiAuthToken are auto-generated if left empty
 
 persistence:
   size: 20Gi
 
-ingress:
+traefik:
   enabled: true
-  className: "nginx"
-  hosts:
-    - host: hermes.example.com
-      paths:
-        - path: /
-          pathType: Prefix
-          serviceName: hermes-webui
-          servicePort: 8648
+  host: "hermes.example.com"
+  tlsSecretName: "hermes-tls"
 ```
 
-### 2. Install the chart
-
 ```bash
-helm install hermes ./hermes-helm -f my-values.yaml
+helm install hermes hermes-agent/hermes-agent -f my-values.yaml
 ```
 
-### 3. Access the Web UI
+### Access the Web UI
 
 ```bash
-# Port-forward if no ingress
-kubectl port-forward svc/hermes-webui 8648:8648
-
+# Port-forward if you have no ingress
+kubectl port-forward svc/hermes-web-ui 8648:8648
 # Then open http://localhost:8648
-# Default login: admin / 123456
 ```
 
-### 4. Check Hermes Agent status
+Default login: **`admin` / `123456`** — change it immediately.
+
+The auto-generated API key can be read after install:
 
 ```bash
-# Check the agent logs
-kubectl logs deployment/hermes-agent
-
-# Port-forward the API
-kubectl port-forward svc/hermes-agent 8642:8642
-
-# Test the health endpoint
-curl http://localhost:8642/health
+kubectl get secret hermes-web-ui -o jsonpath='{.data.API_SERVER_KEY}' | base64 -d
 ```
 
 ## Configuration Reference
 
-### Hermes Agent
+### Web UI
 
 | Parameter | Description | Default |
 |-----------|-------------|---------|
-| `hermes.enabled` | Enable agent deployment | `true` |
-| `hermes.replicaCount` | Replicas (MUST be 1) | `1` |
-| `hermes.image.repository` | Agent image | `nousresearch/hermes-agent` |
-| `hermes.image.tag` | Image tag | `latest` |
-| `hermes.resources.requests.memory` | Memory request | `1Gi` |
-| `hermes.resources.limits.memory` | Memory limit | `4Gi` |
-| `hermes.shmSize` | Shared memory for browser | `1Gi` |
-| `hermes.dashboard.enabled` | Built-in dashboard | `false` |
-| `hermes.service.type` | Service type | `ClusterIP` |
-
-### Hermes Web UI
-
-| Parameter | Description | Default |
-|-----------|-------------|---------|
-| `webui.enabled` | Enable Web UI deployment | `true` |
-| `webui.image.repository` | Web UI image | `ekkoye8888/hermes-web-ui` |
-| `webui.image.tag` | Image tag | `latest` |
-| `webui.service.port` | Service port | `8648` |
+| `web_ui.enabled` | Enable the Web UI deployment | `true` |
+| `web_ui.replicaCount` | Replicas (MUST be 1) | `1` |
+| `web_ui.image.repository` | Image repository | `ekkoye8888/hermes-web-ui` |
+| `web_ui.image.tag` | Image tag (empty → chart `appVersion`) | `""` |
+| `web_ui.image.pullPolicy` | Image pull policy | `IfNotPresent` |
+| `web_ui.env.PORT` | Listen port | `8648` |
+| `web_ui.env.CORS_ORIGINS` | Allowed CORS origins | `*` |
+| `web_ui.resources.requests.memory` | Memory request | `512Mi` |
+| `web_ui.resources.limits.memory` | Memory limit | `4Gi` |
+| `web_ui.resources.limits.cpu` | CPU limit | `2` |
+| `web_ui.service.type` | Service type | `ClusterIP` |
+| `web_ui.service.port` | Service port | `8648` |
 
 ### Secrets
 
@@ -136,145 +117,79 @@ curl http://localhost:8642/health
 |-----------|-------------|
 | `secrets.anthropicApiKey` | Anthropic API key |
 | `secrets.openaiApiKey` | OpenAI API key (optional) |
-| `secrets.apiServerKey` | API server key (min 8 chars) |
+| `secrets.telegramBotToken` | Telegram bot token (optional) |
+| `secrets.apiServerKey` | API server key (auto-generated if empty) |
 | `secrets.webuiAuthToken` | Web UI auth token (auto-generated if empty) |
+| `secrets.existingSecret` | Use an existing Secret instead of creating one |
+
+Auto-generated keys are preserved across `helm upgrade` (the Secret carries
+`helm.sh/resource-policy: keep` and values are re-read via `lookup`).
 
 ### Persistence
 
 | Parameter | Description | Default |
 |-----------|-------------|---------|
-| `persistence.enabled` | Use PVC for data | `true` |
+| `persistence.enabled` | Use a PVC for data | `true` |
 | `persistence.size` | Storage size | `10Gi` |
-| `persistence.storageClass` | Storage class | `""` (default) |
+| `persistence.storageClass` | Storage class (empty = default) | `""` |
+| `persistence.existingClaim` | Use an existing PVC | `""` |
+| `persistence.hermesMountPath` | Hermes data path | `/home/agent/.hermes` |
+
+### Traefik IngressRoute
+
+| Parameter | Description | Default |
+|-----------|-------------|---------|
+| `traefik.enabled` | Generate a Traefik IngressRoute + HTTP→HTTPS redirect | `false` |
+| `traefik.host` | Domain name | `hermes.example.com` |
+| `traefik.tlsSecretName` | TLS certificate secret name | `""` |
+| `traefik.httpEntryPoint` | HTTP entry point | `web` |
+| `traefik.httpsEntryPoint` | HTTPS entry point | `websecure` |
+
+### Ingress (standard Kubernetes Ingress)
+
+| Parameter | Description | Default |
+|-----------|-------------|---------|
+| `ingress.enabled` | Enable a standard Ingress | `false` |
+| `ingress.className` | Ingress class name | `""` |
+| `ingress.hosts` | Host rules (service `hermes-web-ui`, port `8648`) | see values |
+
+Use **either** `traefik.*` (IngressRoute CRD) **or** `ingress.*` (standard Ingress) — not both.
 
 ## Important Notes
 
-1. **Replica count must be 1** — Never run two Hermes gateway containers against the same data directory simultaneously.
-2. **API server key required** — The Hermes Agent API server requires `secrets.apiServerKey` (minimum 8 characters).
-3. **Web UI default credentials** — On first login, use `admin` / `123456`. Change immediately.
-4. **Dashboard vs Web UI** — The built-in dashboard (`hermes.dashboard.enabled`) is optional when using the Web UI. The Web UI provides a richer interface.
-5. **Data persistence** — All configuration, API keys, sessions, skills, and memories are stored in the persistent volume at `/opt/data`.
-6. **Resource requirements** — Hermes Agent needs at least 1Gi memory; 4Gi is recommended for browser automation.
-7. **Headless browser** — The Hermes Agent image includes Playwright + Chromium. The chart allocates 1Gi shared memory (`/dev/shm`) for browser automation.
+1. **Replica count must be 1** — never run two gateways against the same data directory.
+2. **Single pod** — the Web UI bundles the full Hermes Agent and a headless Chromium; there is
+   no separate Agent deployment.
+3. **API keys are optional to set** — `apiServerKey` and `webuiAuthToken` are auto-generated and
+   stay stable across upgrades.
+4. **Data persistence** — all config, API keys, sessions, skills and memory live in the PVC at
+   `/home/agent/.hermes`.
+5. **Image tag** — the default image tag follows the chart `appVersion`, so each chart release
+   pins a concrete, reproducible Web UI version.
 
-## Automated Image Updates
+## Automated Updates
 
-Both projects (Hermes Agent and Hermes Web UI) are updated very frequently. There are three mechanisms to keep your deployment current:
-
-### Option A: In-Cluster CronJob (simplest, included in chart)
-
-Enable the built-in CronJob to perform rolling restarts — Kubernetes re-pulls the `:latest` image:
-
-```yaml
-# my-values.yaml
-autoUpdate:
-  enabled: true
-  schedule: "0 3 * * *"  # Daily at 3 AM
-```
-
-**How it works:** A CronJob runs `kubectl rollout restart` on the Deployments. When pods restart with `imagePullPolicy: Always`, they pull the newest `latest` image. RBAC (ServiceAccount + Role + RoleBinding) is created automatically.
-
-**Requirements:** You must be using `:latest` tag with `imagePullPolicy: Always`:
-
-```yaml
-hermes:
-  image:
-    tag: "latest"
-    pullPolicy: Always
-webui:
-  image:
-    tag: "latest"
-    pullPolicy: Always
-```
-
-### Option B: Renovate Bot (GitHub CI, recommended for production)
-
-This repo includes a [`renovate.json`](../renovate.json) config. Install the [Renovate GitHub App](https://github.com/apps/renovate) on your fork — it will automatically open PRs when new Docker tags are pushed. This gives you:
-
-- Version-pinned tags (not `latest`) for reproducibility
-- PR review before merging
-- Auto-merge for patch updates (configurable)
-- Change history in git
-
-### Option C: GitHub Actions Image Check
-
-The [`.github/workflows/image-check.yaml`](../.github/workflows/image-check.yaml) workflow runs daily and creates a GitHub Issue when new tags are detected. Less automated but requires no external bot.
-
----
-
-## Publishing to ArtifactHub
-
-[ArtifactHub](https://artifacthub.io/) is the go-to discovery platform for Helm charts.
-
-### Step 1: Push chart to a GitHub repository
-
-Ensure your chart is in a public GitHub repo (e.g., `https://github.com/YOUR_USER/hermes-agent-helm`).
-
-### Step 2: Enable GitHub Pages
-
-Go to **Settings → Pages** in your repo, set:
-- Source: `Deploy from a branch`
-- Branch: `gh-pages`, root (`/`)
-
-### Step 3: Run the release workflow
-
-The included [`.github/workflows/release.yaml`](../.github/workflows/release.yaml) will:
-
-1. Lint and package the chart on every push to `main`
-2. Publish `.tgz` packages and `index.yaml` to the `gh-pages` branch
-3. Create a GitHub Release with the chart package attached
-
-```bash
-git add .
-git commit -m "Release hermes-helm chart"
-git push origin main
-```
-
-After the workflow completes, your Helm repository is served at:
-`https://YOUR_USER.github.io/hermes-agent-helm/`
-
-Verify:
-```bash
-helm repo add hermes-agent https://YOUR_USER.github.io/hermes-agent-helm/
-helm repo update
-helm search repo hermes-agent
-```
-
-### Step 4: Register on ArtifactHub
-
-1. Go to **https://artifacthub.io/** → login with GitHub
-2. Click **"Add Repository"** (or visit `https://artifacthub.io/control-panel/repositories/add`)
-3. Choose **"Helm chart repository"**
-4. Enter your repository URL: `https://YOUR_USER.github.io/hermes-agent-helm/`
-5. ArtifactHub automatically scans `index.yaml` and lists all chart versions
-
-Alternatively, add an **`artifacthub-repo.yml`** file to your `gh-pages` branch:
-
-```yaml
-# artifacthub-repo.yml
-repositoryID: <uuid-from-artifacthub>
-owners:
-  - name: YOUR_NAME
-    email: YOUR_EMAIL
-```
-
-For full documentation, see: https://artifacthub.io/docs/topics/repositories/
-
----
+The repository's CI watches the upstream Web UI image and **automatically opens a pull request**
+bumping `appVersion` (and the chart version) when a new stable `vX.Y.Z` tag is published — see
+[`.github/workflows/image-check.yaml`](../.github/workflows/image-check.yaml). A
+[`renovate.json`](../renovate.json) is also provided if you prefer the Renovate GitHub App.
 
 ## Upgrading
 
 ```bash
-helm upgrade hermes ./hermes-helm -f my-values.yaml
+helm upgrade hermes hermes-agent/hermes-agent -f my-values.yaml
 ```
 
 ## Uninstall
 
 ```bash
-# Uninstall but keep the PVC (data preserved)
+# Uninstall (the PVC and Secret are kept by resource-policy: keep)
 helm uninstall hermes
 
-# Uninstall and delete all data
-helm uninstall hermes
-kubectl delete pvc -l app.kubernetes.io/instance=hermes
+# To also delete the data:
+kubectl delete pvc,secret -l app.kubernetes.io/instance=hermes
 ```
+
+## License
+
+MIT

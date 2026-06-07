@@ -6,17 +6,12 @@ secrets:
   # ⚠️ REQUIRED: Set your API keys
   anthropicApiKey: "sk-ant-..."
   openaiApiKey: "sk-..."          # Optional if only using Anthropic
-  apiServerKey: ""                # REQUIRED: min 8 chars, e.g. openssl rand -hex 16
+  apiServerKey: ""                # Auto-generated if empty (recommended)
   webuiAuthToken: ""              # Auto-generated if empty (recommended)
 
-hermes:
-  dashboard:
-    # Enable the built-in dashboard (optional; Web UI is richer)
-    enabled: false
-    basicAuthUsername: "admin"
-    basicAuthPassword: "changeme"
-
-  # Resource allocation for production
+# The Web UI pod bundles the full Hermes Agent + headless Chromium.
+web_ui:
+  # Resource allocation for production (sized for browser automation)
   resources:
     requests:
       memory: "2Gi"
@@ -25,27 +20,9 @@ hermes:
       memory: "8Gi"
       cpu: "4"
 
-  # Node affinity — pin to a specific node if desired
+  # Pin to a specific node if desired
   # nodeSelector:
   #   workload: ai
-  # affinity:
-  #   nodeAffinity:
-  #     requiredDuringSchedulingIgnoredDuringExecution:
-  #       nodeSelectorTerms:
-  #         - matchExpressions:
-  #             - key: node-type
-  #               operator: In
-  #               values:
-  #                 - high-memory
-
-web_ui:
-  resources:
-    requests:
-      memory: "256Mi"
-      cpu: "100m"
-    limits:
-      memory: "1Gi"
-      cpu: "500m"
 
 persistence:
   size: 50Gi
