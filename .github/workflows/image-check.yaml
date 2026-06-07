@@ -1,0 +1,65 @@
+name: Check for Updated Images
+
+# Scheduled check for new Docker image tags
+on:
+  schedule:
+    # Run daily at 6 AM UTC
+    - cron: '0 6 * * *'
+  workflow_dispatch:
+
+jobs:
+  check-updates:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Check Hermes Agent image tags
+        id: agent_check
+        run: |
+          # Fetch latest tags from Docker Hub API
+          # nousresearch/hermes-agent
+          echo "Checking nousresearch/hermes-agent..."
+          TOKEN=$(curl -s "https://auth.docker.io/token?service=registry.docker.io&scope=repository:nousresearch/hermes-agent:pull" | jq -r '.token')
+          TAGS=$(curl -s -H "Authorization: Bearer $TOKEN" \
+            "https://registry-1.docker.io/v2/nousresearch/hermes-agent/tags/list?n=10" | jq -r '.tags[]' | grep -v 'latest' | tail -5)
+          echo "Recent tags: $TAGS"
+          echo "tags=$TAGS" >> $GITHUB_OUTPUT
+
+      - name: Check Web UI image tags
+        id: webui_check
+        run: |
+          echo "Checking ekkoye8888/hermes-web-ui..."
+          TOKEN=$(curl -s "https://auth.docker.io/token?service=registry.docker.io&scope=repository:ekkoye8888/hermes-web-ui:pull" | jq -r '.token')
+          TAGS=$(curl -s -H "Authorization: Bearer $TOKEN" \
+            "https://registry-1.docker.io/v2/ekkoye8888/hermes-web-ui/tags/list?n=10" | jq -r '.tags[]' | grep -v 'latest' | tail -5)
+          echo "Recent tags: $TAGS"
+          echo "tags=$TAGS" >> $GITHUB_OUTPUT
+
+      - name: Create issue if new tags found
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const agentTags = `${{ steps.agent_check.outputs.tags }}`;
+            const webuiTags = `${{ steps.webui_check.outputs.tags }}`;
+
+            const body = `## 📦 New Image Tags Detected
+
+            ### nousresearch/hermes-agent
+            Recent tags: ${agentTags || 'Unable to check'}
+
+            ### ekkoye8888/hermes-web-ui
+            Recent tags: ${webuiTags || 'Unable to check'}
+
+            Review and update \`values.yaml\` if needed.`;
+
+            // Only create issue if there are actual tags
+            if (agentTags.trim() || webuiTags.trim()) {
+              await github.rest.issues.create({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                title: '📦 New container image tags available',
+                body: body,
+                labels: ['dependencies', 'automated']
+              });
+            }

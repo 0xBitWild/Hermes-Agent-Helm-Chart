@@ -1,0 +1,18 @@
+apiVersion: v2
+name: hermes-agent
+description: A Helm chart to deploy Hermes Agent and Hermes Web UI on Kubernetes
+type: application
+version: 0.3.0
+appVersion: "latest"
+keywords:
+  - hermes
+  - ai-agent
+  - llm
+  - anthropic
+  - openai
+home: https://hermes-agent.nousresearch.com/
+sources:
+  - https://github.com/NousResearch/hermes-agent
+  - https://github.com/EKKOLearnAI/hermes-web-ui
+maintainers:
+  - name: liuxiaohui

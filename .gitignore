@@ -1,0 +1,16 @@
+# Helm packages
+*.tgz
+.charts/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Helm test outputs
+Chart.lock

@@ -1,0 +1,220 @@
+# =============================================================================
+# Hermes Web UI — Helm Chart Values
+# =============================================================================
+
+# -- Override the full resource name (default: hermes-web-ui)
+fullnameOverride: "hermes-web-ui"
+
+# -- Global settings applied to all resources
+global:
+  # -- Kubernetes namespace override (set via --namespace or leave empty for release namespace)
+  namespace: ""
+  # -- Image pull secrets applied to all pods
+  imagePullSecrets: []
+
+# =============================================================================
+# Hermes Web UI (includes built-in Hermes Agent)
+# =============================================================================
+web_ui:
+  # -- Enable/disable the Hermes Web UI deployment
+  enabled: true
+
+  # -- Override the Web UI resource name
+  fullnameOverride: "hermes-web-ui"
+
+  # -- Number of replicas (must be 1)
+  replicaCount: 1
+
+  image:
+    # -- Container image repository
+    repository: ekkoye8888/hermes-web-ui
+    # -- Image pull policy
+    pullPolicy: IfNotPresent
+    # -- Image tag
+    tag: "latest"
+
+  # -- Override the container command
+  command: []
+  # -- Arguments
+  args: []
+
+  # -- Environment variables (non-sensitive)
+  env:
+    # -- Web UI listen port
+    PORT: "8648"
+    # -- Bind address
+    BIND_HOST: "0.0.0.0"
+    # -- Log level
+    LOG_LEVEL: "info"
+    # -- CORS origins (comma- or space-separated)
+    CORS_ORIGINS: "*"
+    # -- Maximum download size
+    MAX_DOWNLOAD_SIZE: "200MB"
+    # -- Maximum edit size
+    MAX_EDIT_SIZE: "10MB"
+    # -- Stop gateways on shutdown
+    HERMES_WEB_UI_STOP_GATEWAYS_ON_SHUTDOWN: "true"
+
+  # -- Resource requests & limits (Web UI includes full Hermes Agent)
+  resources:
+    requests:
+      memory: "512Mi"
+      cpu: "200m"
+    limits:
+      memory: "4Gi"
+      cpu: "2"
+
+  # -- Service configuration
+  service:
+    # -- Service type
+    type: ClusterIP
+    # -- Web UI port
+    port: 8648
+    # -- NodePort (only for LoadBalancer/NodePort types)
+    nodePort: null
+    # -- Annotations on the service
+    annotations: {}
+
+  # -- Pod-level security context (UID 10000 = hermes user in image)
+  podSecurityContext:
+    runAsUser: 10000
+    runAsGroup: 10000
+    fsGroup: 10000
+  # -- Container-level security context (empty: rely on image defaults)
+  containerSecurityContext: {}
+
+  # -- Health probes
+  probes:
+    liveness:
+      httpGet:
+        path: /
+        port: 8648
+      initialDelaySeconds: 15
+      periodSeconds: 30
+      timeoutSeconds: 5
+      failureThreshold: 3
+    readiness:
+      httpGet:
+        path: /
+        port: 8648
+      initialDelaySeconds: 5
+      periodSeconds: 10
+      timeoutSeconds: 5
+      failureThreshold: 3
+    startup:
+      httpGet:
+        path: /
+        port: 8648
+      initialDelaySeconds: 5
+      periodSeconds: 10
+      timeoutSeconds: 5
+      failureThreshold: 30
+
+  # -- Node selector
+  nodeSelector: {}
+  # -- Tolerations
+  tolerations: []
+  # -- Affinity
+  affinity: {}
+  # -- Topology spread constraints
+  topologySpreadConstraints: []
+
+  # -- Extra volumes
+  extraVolumes: []
+  # -- Extra volume mounts
+  extraVolumeMounts: []
+
+  # -- Pod annotations
+  podAnnotations: {}
+  # -- Pod labels
+  podLabels: {}
+
+# =============================================================================
+# Persistence
+# =============================================================================
+persistence:
+  # -- Enable persistent storage for Hermes data
+  enabled: true
+  # -- Storage class name (empty string = default StorageClass)
+  storageClass: ""
+  # -- Access mode
+  accessMode: ReadWriteOnce
+  # -- Requested storage size
+  size: 10Gi
+  # -- Existing persistent volume claim name (leave empty to create one)
+  existingClaim: ""
+  # -- Mount path for Hermes data (official image path)
+  hermesMountPath: /home/agent/.hermes
+  # -- Mount path for Web UI data (official image path)
+  webUiMountPath: /home/agent/.hermes-web-ui
+  # -- SubPath for Web UI data within the shared volume
+  webUiSubPath: "web-ui"
+  # -- Annotations on the PVC
+  annotations: {}
+
+# =============================================================================
+# Secrets (API keys and credentials)
+# =============================================================================
+secrets:
+  # -- Create a Kubernetes Secret with these values
+  create: true
+  # -- Existing secret name (leave empty to auto-generate)
+  existingSecret: ""
+  # -- Secret annotations
+  annotations: {}
+
+  # ⚠️  Set these via --set or a values override file — NEVER commit real keys.
+  # -- Anthropic API key
+  anthropicApiKey: ""
+  # -- OpenAI API key
+  openaiApiKey: ""
+  # -- Telegram bot token (optional)
+  telegramBotToken: ""
+  # -- API server key (auto-generated if empty)
+  apiServerKey: ""
+  # -- Web UI auth token (auto-generated if empty)
+  webuiAuthToken: ""
+
+# =============================================================================
+# Traefik IngressRoute
+# =============================================================================
+traefik:
+  # -- Enable Traefik IngressRoute
+  enabled: false
+  # -- Domain name
+  host: "hermes.example.com"
+  # -- TLS certificate secret name
+  tlsSecretName: ""
+  # -- Entry point name for HTTP (redirect → HTTPS)
+  httpEntryPoint: "web"
+  # -- Entry point name for HTTPS
+  httpsEntryPoint: "websecure"
+
+# =============================================================================
+# Ingress (standard Kubernetes Ingress)
+# =============================================================================
+ingress:
+  # -- Enable standard Kubernetes Ingress
+  enabled: false
+  # -- Ingress class name
+  className: ""
+  # -- Annotations
+  annotations: {}
+
+  # -- TLS configuration
+  tls: []
+  #  - secretName: hermes-tls
+  #    hosts:
+  #      - hermes.example.com
+
+  # -- Host rules
+  hosts:
+    - host: hermes.local
+      paths:
+        - path: /
+          pathType: Prefix
+          serviceName: hermes-web-ui
+          servicePort: 8648
+
+# -- Extra Kubernetes manifests (included as raw templates)
+extraManifests: []

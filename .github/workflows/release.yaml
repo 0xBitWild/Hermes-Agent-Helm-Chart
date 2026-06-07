@@ -1,0 +1,88 @@
+name: Release Helm Chart
+
+# Trigger on push to main branch when chart files change
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'hermes-helm/**'
+  # Allow manual trigger
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pages: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: v3.16.0
+
+      - name: Lint chart
+        run: helm lint hermes-helm/
+
+      - name: Package chart
+        id: package
+        run: |
+          mkdir -p .charts
+          helm package hermes-helm/ -d .charts/
+          VERSION=$(grep '^version:' hermes-helm/Chart.yaml | awk '{print $2}')
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "Chart version: $VERSION"
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: hermes-helm-v${{ steps.package.outputs.version }}
+          name: Hermes Helm Chart v${{ steps.package.outputs.version }}
+          files: .charts/*.tgz
+          generate_release_notes: true
+
+      - name: Configure Git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Publish to GitHub Pages (Helm repo)
+        run: |
+          # Clone gh-pages or create it
+          if git fetch origin gh-pages 2>/dev/null; then
+            git checkout gh-pages
+            git pull origin gh-pages --ff-only || true
+          else
+            git checkout --orphan gh-pages
+            git rm -rf . || true
+          fi
+
+          # Copy chart and build index
+          mkdir -p charts
+          cp .charts/*.tgz charts/
+
+          REPO_URL="https://${GITHUB_REPOSITORY_OWNER}.github.io/${GITHUB_REPOSITORY#*/}/charts"
+          if [ -f index.yaml ]; then
+            helm repo index charts/ --merge index.yaml --url "$REPO_URL"
+          else
+            helm repo index charts/ --url "$REPO_URL"
+          fi
+
+          # Keep a copy at root for gh-pages compatibility
+          cp charts/index.yaml index.yaml
+
+          # Commit and push gh-pages
+          git add charts/ index.yaml
+          if git diff --cached --quiet; then
+            echo "No changes to commit"
+          else
+            git commit -m "Release chart v${{ steps.package.outputs.version }}"
+            git push origin gh-pages
+          fi

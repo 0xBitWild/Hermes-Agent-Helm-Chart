@@ -1,0 +1,54 @@
+{{- if .Values.traefik.enabled }}
+---
+# HTTP → HTTPS redirect middleware
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: {{ include "hermes.web_ui.fullname" . }}-redirect
+  labels:
+    {{- include "hermes.labels" . | nindent 4 }}
+spec:
+  redirectScheme:
+    permanent: true
+    scheme: https
+---
+# HTTP entry (redirect to HTTPS)
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: {{ include "hermes.web_ui.fullname" . }}-web
+  labels:
+    {{- include "hermes.labels" . | nindent 4 }}
+spec:
+  entryPoints:
+    - {{ .Values.traefik.httpEntryPoint }}
+  routes:
+    - kind: Rule
+      match: Host(`{{ .Values.traefik.host }}`)
+      services:
+        - name: {{ include "hermes.web_ui.fullname" . }}
+          port: {{ .Values.web_ui.service.port }}
+      middlewares:
+        - name: {{ include "hermes.web_ui.fullname" . }}-redirect
+---
+# HTTPS entry
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: {{ include "hermes.web_ui.fullname" . }}-websecure
+  labels:
+    {{- include "hermes.labels" . | nindent 4 }}
+spec:
+  entryPoints:
+    - {{ .Values.traefik.httpsEntryPoint }}
+  routes:
+    - kind: Rule
+      match: Host(`{{ .Values.traefik.host }}`)
+      services:
+        - name: {{ include "hermes.web_ui.fullname" . }}
+          port: {{ .Values.web_ui.service.port }}
+  {{- if .Values.traefik.tlsSecretName }}
+  tls:
+    secretName: {{ .Values.traefik.tlsSecretName | quote }}
+  {{- end }}
+{{- end }}

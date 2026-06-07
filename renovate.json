@@ -1,0 +1,48 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": [
+    "config:recommended"
+  ],
+  "description": "Auto-update Hermes Docker image tags via PRs",
+  "docker": {
+    "enabled": true
+  },
+  "customManagers": [
+    {
+      "customType": "helm-values",
+      "datasourceTemplate": "docker",
+      "description": "Track hermes-agent Docker image",
+      "fileMatch": [
+        "(^|/)values\\.ya?ml$",
+        "(^|/)values-prod\\.ya?ml$"
+      ],
+      "matchStrings": [
+        "repository:\\s*nousresearch/hermes-agent\\s*\\n\\s*tag:\\s*\"(?<currentValue>[^\"]+)\""
+      ],
+      "depNameTemplate": "nousresearch/hermes-agent"
+    },
+    {
+      "customType": "helm-values",
+      "datasourceTemplate": "docker",
+      "description": "Track hermes-web-ui Docker image",
+      "fileMatch": [
+        "(^|/)values\\.ya?ml$",
+        "(^|/)values-prod\\.ya?ml$"
+      ],
+      "matchStrings": [
+        "repository:\\s*ekkoye8888/hermes-web-ui\\s*\\n\\s*tag:\\s*\"(?<currentValue>[^\"]+)\""
+      ],
+      "depNameTemplate": "ekkoye8888/hermes-web-ui"
+    }
+  ],
+  "packageRules": [
+    {
+      "description": "Auto-merge patch updates for non-latest tags",
+      "matchDatasources": ["docker"],
+      "matchUpdateTypes": ["patch"],
+      "automerge": true,
+      "automergeType": "pr",
+      "platformAutomerge": true
+    }
+  ]
+}
