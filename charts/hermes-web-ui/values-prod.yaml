@@ -1,0 +1,49 @@
+# Example production values override for Hermes Agent Helm Chart
+# Copy this file and fill in your secrets, then:
+#   helm install hermes ./hermes-helm -f values-prod.yaml
+
+secrets:
+  # ⚠️ REQUIRED: Set your API keys
+  anthropicApiKey: "sk-ant-..."
+  openaiApiKey: "sk-..."          # Optional if only using Anthropic
+  apiServerKey: ""                # Auto-generated if empty (recommended)
+  webuiAuthToken: ""              # Auto-generated if empty (recommended)
+
+# The Web UI pod bundles the full Hermes Agent + headless Chromium.
+web_ui:
+  # Resource allocation for production (sized for browser automation)
+  resources:
+    requests:
+      memory: "2Gi"
+      cpu: "1000m"
+    limits:
+      memory: "8Gi"
+      cpu: "4"
+
+  # Pin to a specific node if desired
+  # nodeSelector:
+  #   workload: ai
+
+persistence:
+  size: 50Gi
+  # storageClass: "your-fast-ssd-class"
+
+ingress:
+  enabled: true
+  className: "nginx"
+  annotations:
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+    nginx.ingress.kubernetes.io/proxy-body-size: "200m"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "300"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "300"
+  tls:
+    - secretName: hermes-tls
+      hosts:
+        - hermes.example.com
+  hosts:
+    - host: hermes.example.com
+      paths:
+        - path: /
+          pathType: Prefix
+          serviceName: hermes-web-ui
+          servicePort: 8648

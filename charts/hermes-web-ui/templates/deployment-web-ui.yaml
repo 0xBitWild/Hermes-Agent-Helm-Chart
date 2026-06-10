@@ -1,0 +1,129 @@
+{{- if .Values.web_ui.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "hermes.web_ui.fullname" . }}
+  labels:
+    {{- include "hermes.labels" . | nindent 4 }}
+    {{- with .Values.web_ui.podLabels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+  {{- with .Values.web_ui.podAnnotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  replicas: {{ .Values.web_ui.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "hermes.web_ui.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "hermes.web_ui.selectorLabels" . | nindent 8 }}
+        {{- with .Values.web_ui.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      {{- with .Values.web_ui.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+    spec:
+      {{- with .Values.global.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.web_ui.podSecurityContext }}
+      securityContext:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: hermes-web-ui
+          image: "{{ .Values.web_ui.image.repository }}:{{ .Values.web_ui.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.web_ui.image.pullPolicy }}
+          {{- with .Values.web_ui.command }}
+          command:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.web_ui.args }}
+          args:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.web_ui.containerSecurityContext }}
+          securityContext:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          env:
+            {{- range $key, $val := .Values.web_ui.env }}
+            - name: {{ $key }}
+              value: {{ $val | quote }}
+            {{- end }}
+            - name: HERMES_HOME
+              value: {{ $.Values.persistence.hermesMountPath }}
+            - name: HERMES_WEB_UI_HOME
+              value: {{ $.Values.persistence.webUiMountPath }}
+            - name: HERMES_WEB_UI_MANAGED_GATEWAY
+              value: "1"
+          envFrom:
+            - secretRef:
+                name: {{ include "hermes.secretName" . }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.web_ui.env.PORT | default 8648 }}
+              protocol: TCP
+          {{- with .Values.web_ui.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.web_ui.probes.liveness }}
+          livenessProbe:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.web_ui.probes.readiness }}
+          readinessProbe:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.web_ui.probes.startup }}
+          startupProbe:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          volumeMounts:
+            {{- if $.Values.persistence.enabled }}
+            - name: data
+              mountPath: {{ $.Values.persistence.hermesMountPath }}
+            - name: web-ui-data
+              mountPath: {{ $.Values.persistence.webUiMountPath }}
+              subPath: {{ $.Values.persistence.webUiSubPath }}
+            {{- end }}
+            {{- with .Values.web_ui.extraVolumeMounts }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+      volumes:
+        {{- if $.Values.persistence.enabled }}
+        - name: data
+          persistentVolumeClaim:
+            claimName: {{ include "hermes.pvcName" $ }}
+        - name: web-ui-data
+          persistentVolumeClaim:
+            claimName: {{ include "hermes.pvcName" $ }}
+        {{- end }}
+        {{- with .Values.web_ui.extraVolumes }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      {{- with .Values.web_ui.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.web_ui.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.web_ui.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.web_ui.topologySpreadConstraints }}
+      topologySpreadConstraints:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+{{- end }}

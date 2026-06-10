@@ -1,0 +1,70 @@
+name: Check for Updated Images
+
+# Scheduled check for new Hermes Web UI image tags.
+# When a newer stable (vX.Y.Z) tag is published, bump the chart appVersion
+# (which is also the default image tag) plus the chart version, push to main,
+# and trigger the Release workflow to publish automatically.
+on:
+  schedule:
+    # Run daily at 06:07 UTC
+    - cron: '7 6 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: write
+
+jobs:
+  check-updates:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Determine latest Web UI version
+        id: webui
+        run: |
+          echo "Checking ekkoye8888/hermes-web-ui..."
+          TOKEN=$(curl -s "https://auth.docker.io/token?service=registry.docker.io&scope=repository:ekkoye8888/hermes-web-ui:pull" | jq -r '.token')
+          LATEST=$(curl -s -H "Authorization: Bearer $TOKEN" \
+            "https://registry-1.docker.io/v2/ekkoye8888/hermes-web-ui/tags/list" \
+            | jq -r '.tags[]' | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -1)
+          echo "Latest stable web-ui tag: $LATEST"
+          echo "latest=$LATEST" >> "$GITHUB_OUTPUT"
+
+      - name: Read current appVersion
+        id: current
+        run: |
+          CURRENT=$(grep '^appVersion:' charts/hermes-web-ui/Chart.yaml | awk '{print $2}' | tr -d '"')
+          echo "Current appVersion: $CURRENT"
+          echo "current=$CURRENT" >> "$GITHUB_OUTPUT"
+
+      - name: Bump Chart.yaml and push to main
+        id: bump
+        if: steps.webui.outputs.latest != '' && steps.webui.outputs.latest != steps.current.outputs.current
+        env:
+          LATEST: ${{ steps.webui.outputs.latest }}
+        run: |
+          # Bump appVersion to the new Web UI tag (also the default image tag).
+          sed -i "s/^appVersion:.*/appVersion: \"${LATEST}\"/" charts/hermes-web-ui/Chart.yaml
+          # Bump the chart version patch.
+          CHART_VER=$(grep '^version:' charts/hermes-web-ui/Chart.yaml | awk '{print $2}' | tr -d '"')
+          IFS='.' read -r MA MI PA <<< "$CHART_VER"
+          NEW_CHART_VER="${MA}.${MI}.$((PA + 1))"
+          sed -i "s/^version:.*/version: ${NEW_CHART_VER}/" charts/hermes-web-ui/Chart.yaml
+          echo "Bumped appVersion to ${LATEST}, chart version to ${NEW_CHART_VER}"
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add charts/hermes-web-ui/Chart.yaml
+          git commit -m "chore: bump Hermes Web UI to ${LATEST} (chart ${NEW_CHART_VER})"
+          git push origin HEAD:main
+          echo "pushed=true" >> "$GITHUB_OUTPUT"
+
+      # A push made with GITHUB_TOKEN does NOT trigger the Release workflow's
+      # `on: push`, so dispatch it explicitly.
+      - name: Trigger Release workflow
+        if: steps.bump.outputs.pushed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run release.yaml --ref main

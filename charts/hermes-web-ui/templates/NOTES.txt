@@ -1,0 +1,63 @@
+{{- $webUiSvc := include "hermes.web_ui.fullname" . }}
+{{- $releaseName := .Release.Name }}
+{{- $namespace := .Release.Namespace }}
+{{- if .Values.web_ui.enabled }}
+================================================================================
+  Hermes Web UI deployed! (includes built-in Hermes Agent)
+================================================================================
+
+  Release:  {{ $releaseName }}
+  Namespace: {{ $namespace }}
+
+  🔗 Access the Web UI:
+    {{- if .Values.traefik.enabled }}
+    https://{{ .Values.traefik.host }}
+    {{- else if .Values.ingress.enabled }}
+    https://{{ (index .Values.ingress.hosts 0).host }}
+    {{- else if eq .Values.web_ui.service.type "NodePort" }}
+    http://<NODE_IP>:{{ .Values.web_ui.service.nodePort }}
+    {{- else if eq .Values.web_ui.service.type "LoadBalancer" }}
+    kubectl -n {{ $namespace }} get svc {{ $webUiSvc }} -o jsonpath='{.status.loadBalancer.ingress[0].ip}'
+    {{- else }}
+    kubectl -n {{ $namespace }} port-forward svc/{{ $webUiSvc }} {{ .Values.web_ui.env.PORT | default 8648 }}:{{ .Values.web_ui.service.port }}
+    Then open: http://localhost:{{ .Values.web_ui.env.PORT | default 8648 }}
+    {{- end }}
+
+  🔑 Web UI default login:
+    Username: admin
+    Password: 123456
+    (Change immediately after first login!)
+
+  📦 Persistent data:
+    PVC: {{ include "hermes.pvcName" . }}
+    Mount: {{ .Values.persistence.hermesMountPath }}
+    Size: {{ .Values.persistence.size }}
+
+  📋 Check status:
+    kubectl -n {{ $namespace }} get pods -l app.kubernetes.io/instance={{ $releaseName }}
+    kubectl -n {{ $namespace }} logs deployment/{{ $webUiSvc }}
+
+  🔐 Auto-generated secrets:
+    kubectl -n {{ $namespace }} get secret {{ include "hermes.secretName" . }} -o jsonpath='{.data.API_SERVER_KEY}' | base64 -d; echo
+
+  ⚠️  Important:
+    - The Web UI container includes a full Hermes Agent (managed gateway mode)
+    - Only 1 replica is supported (never run 2 against the same data dir)
+    - Set secrets.anthropicApiKey to use Claude/Anthropic models
+================================================================================
+{{- else if .Values.hermes.enabled }}
+{{- $hermesSvc := include "hermes.agent.fullname" . }}
+================================================================================
+  Hermes Agent deployed (headless, no Web UI)
+================================================================================
+
+  Release:  {{ $releaseName }}
+  Namespace: {{ $namespace }}
+
+  🤖 API endpoint: {{ $hermesSvc }}.{{ $namespace }}.svc.cluster.local:8642
+    kubectl -n {{ $namespace }} port-forward svc/{{ $hermesSvc }} 8642:8642
+
+  📋 Logs:
+    kubectl -n {{ $namespace }} logs deployment/{{ $hermesSvc }}
+================================================================================
+{{- end }}

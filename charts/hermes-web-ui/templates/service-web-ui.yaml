@@ -1,0 +1,24 @@
+{{- if .Values.web_ui.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "hermes.web_ui.fullname" . }}
+  labels:
+    {{- include "hermes.labels" . | nindent 4 }}
+  {{- with .Values.web_ui.service.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  type: {{ .Values.web_ui.service.type }}
+  selector:
+    {{- include "hermes.web_ui.selectorLabels" . | nindent 4 }}
+  ports:
+    - name: http
+      port: {{ .Values.web_ui.service.port }}
+      targetPort: {{ .Values.web_ui.env.PORT | default 8648 }}
+      protocol: TCP
+      {{- if and (eq .Values.web_ui.service.type "NodePort") .Values.web_ui.service.nodePort }}
+      nodePort: {{ .Values.web_ui.service.nodePort }}
+      {{- end }}
+{{- end }}
