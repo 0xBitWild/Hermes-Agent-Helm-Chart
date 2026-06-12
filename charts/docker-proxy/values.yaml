@@ -1,0 +1,170 @@
+# Default values for docker-proxy.
+# This chart deploys one Deployment + Service + PVC (+ Traefik routes) per entry
+# in `registries`. An entry with `upstream` set becomes a pull-through cache
+# mirror; an entry without `upstream` becomes a hosted (push/pull) private
+# registry. All entries share the templates below; per-entry fields override.
+
+# -- Container image for the registry (CNCF distribution). Defaults to the
+# dqzboy rebuild used by Docker-Proxy; swap to the official `registry:3` with
+# `--set image.repository=registry --set image.tag=3` (config format is
+# compatible — both read /etc/distribution/config.yml).
+image:
+  repository: dqzboy/registry
+  tag: latest
+  pullPolicy: IfNotPresent
+
+# -- Image pull secrets for private registries hosting the image above.
+imagePullSecrets: []
+
+# -- Resources naming: each object is named "<namePrefix><name>" (e.g. registry-hub).
+namePrefix: registry-
+
+# -- Base domain. Each registry is served at "<host|name>.<domain>".
+# REQUIRED — override at install time, e.g. --set domain=example.com
+domain: example.com
+
+# -- Port the registry container listens on (distribution default).
+containerPort: 5000
+
+service:
+  type: ClusterIP
+  # -- Service port (exposed to Traefik / cluster).
+  port: 5000
+
+# -- Number of replicas per registry. Keep at 1 — distribution's filesystem
+# driver is not safe for concurrent writers against the same volume.
+replicaCount: 1
+
+# -- Deployment strategy. Recreate avoids two pods touching one RWO volume.
+strategy:
+  type: Recreate
+
+revisionHistoryLimit: 10
+
+# -- Persistent storage for each registry's blob cache (/var/lib/registry).
+# One PersistentVolumeClaim is created per registry (override per-entry below).
+persistence:
+  enabled: true
+  # -- StorageClass for the PVCs. "" uses the cluster default; "-" disables
+  # dynamic provisioning.
+  storageClass: ""
+  accessModes:
+    - ReadWriteOnce
+  # -- Default size for proxy cache volumes (override per-entry, e.g. larger for
+  # hosted private registries).
+  size: 20Gi
+  # -- Keep PVCs on `helm uninstall` to avoid losing cached/pushed blobs.
+  keep: true
+
+# -- Pod-level security context.
+podSecurityContext: {}
+
+# -- Container-level security context.
+securityContext: {}
+
+# -- Scheduling controls applied to every registry pod.
+nodeSelector: {}
+tolerations: []
+affinity: {}
+
+# -- Extra environment variables added to every registry container.
+# OTEL_TRACES_EXPORTER=none disables OpenTelemetry tracing (distribution v3).
+extraEnv:
+  - name: OTEL_TRACES_EXPORTER
+    value: "none"
+
+# -- Health probe tuning (TCP check against the registry port).
+probes:
+  initialDelaySeconds: 45
+  periodSeconds: 10
+  timeoutSeconds: 1
+  successThreshold: 1
+  failureThreshold: 3
+
+# -- Default distribution proxy cache TTL (applied to proxy entries unless the
+# entry overrides `ttl`).
+proxyTtl: 168h
+
+# -- Optional HTTP basic auth (htpasswd) for hosted private registries.
+# Disabled by default. When enabled, the registry requires `docker login`.
+# Applied only to entries where `auth: true` (or globally if `auth.global`).
+auth:
+  enabled: false
+  # -- Apply auth to every registry entry (true) or only entries with auth:true.
+  global: false
+  realm: "Registry Realm"
+  # -- Reference an existing Secret holding an `htpasswd` key instead of
+  # generating one from the users list below.
+  existingSecret: ""
+  # -- Users to encode into an htpasswd Secret (bcrypt). Plain passwords here
+  # are templated into a Secret — prefer existingSecret for sensitive setups.
+  users: []
+  #  - username: admin
+  #    password: changeme
+
+traefik:
+  enabled: true
+  httpEntryPoint: web
+  httpsEntryPoint: websecure
+  # -- Redirect HTTP → HTTPS with a per-registry middleware.
+  redirectToHttps: true
+  # -- TLS secret holding the cert for *.<domain>. Empty disables TLS on the
+  # websecure route (not recommended for a public registry).
+  tlsSecretName: ""
+
+# -- Standard Kubernetes Ingress, as an alternative to Traefik IngressRoute for
+# clusters using nginx, HAProxy, etc. One Ingress is created per registry at
+# "<host|name>.<domain>". Disabled by default — enable this OR traefik, not both.
+ingress:
+  enabled: false
+  # -- ingressClassName (e.g. nginx). "" omits the field (uses cluster default).
+  className: ""
+  # -- Annotations applied to every generated Ingress. For image push through
+  # nginx you MUST raise the body size, e.g.:
+  #   nginx.ingress.kubernetes.io/proxy-body-size: "0"
+  annotations: {}
+  path: /
+  pathType: Prefix
+  tls:
+    # -- Add a TLS block to each Ingress.
+    enabled: false
+    # -- Shared TLS secret for all hosts. If empty, each registry uses its own
+    # secret named "<namePrefix><name>-tls".
+    secretName: ""
+
+# -- The registries to deploy. Each item:
+#   name:        short id; resource name = <namePrefix><name>, host = <name>.<domain>
+#   upstream:    (proxy only) remote registry URL → renders distribution proxy block
+#   host:        (optional) subdomain override; defaults to `name`
+#   username/password: (proxy only, optional) credentials for the upstream
+#   size:        (optional) PVC size override
+#   ttl:         (optional) proxy cache TTL override
+#   auth:        (optional, hosted only) require basic auth for this entry
+registries:
+  # ---- Pull-through cache mirrors (have an upstream) ----
+  - name: hub
+    upstream: https://registry-1.docker.io
+  - name: gcr
+    upstream: https://gcr.io
+  - name: ghcr
+    upstream: https://ghcr.io
+  - name: k8sgcr
+    upstream: https://k8s.gcr.io
+  - name: k8s
+    upstream: https://registry.k8s.io
+  - name: quay
+    upstream: https://quay.io
+  - name: mcr
+    upstream: https://mcr.microsoft.com
+  - name: elastic
+    upstream: https://docker.elastic.co
+  - name: nvcr
+    upstream: https://nvcr.io
+
+  # ---- Hosted private registry (no upstream → push/pull enabled) ----
+  - name: registry
+    # No `upstream`: this is a hosted private registry served at
+    # registry.<domain>. Push with `docker push registry.<domain>/your/image`.
+    # Given more space since it stores originals, not just cache.
+    size: 50Gi
+    # auth: true   # set with auth.enabled=true to require docker login

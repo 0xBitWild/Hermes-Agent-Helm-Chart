@@ -1,0 +1,39 @@
+{{- $ctx := . -}}
+{{- if .Values.ingress.enabled }}
+{{- range .Values.registries }}
+{{- $name := include "docker-proxy.registryName" (dict "ctx" $ctx "reg" .) }}
+{{- $host := include "docker-proxy.registryHost" (dict "ctx" $ctx "reg" .) }}
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "docker-proxy.registryLabels" (dict "ctx" $ctx "reg" .) | nindent 4 }}
+  {{- with $ctx.Values.ingress.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  {{- with $ctx.Values.ingress.className }}
+  ingressClassName: {{ . }}
+  {{- end }}
+  {{- if $ctx.Values.ingress.tls.enabled }}
+  tls:
+    - hosts:
+        - {{ $host | quote }}
+      secretName: {{ $ctx.Values.ingress.tls.secretName | default (printf "%s-tls" $name) }}
+  {{- end }}
+  rules:
+    - host: {{ $host | quote }}
+      http:
+        paths:
+          - path: {{ $ctx.Values.ingress.path }}
+            pathType: {{ $ctx.Values.ingress.pathType }}
+            backend:
+              service:
+                name: {{ $name }}
+                port:
+                  number: {{ $ctx.Values.service.port }}
+{{- end }}
+{{- end }}

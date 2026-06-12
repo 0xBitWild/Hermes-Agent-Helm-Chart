@@ -1,0 +1,64 @@
+{{- $ctx := . }}
+================================================================================
+  docker-proxy deployed — {{ len .Values.registries }} registr{{ if eq (len .Values.registries) 1 }}y{{ else }}ies{{ end }}
+================================================================================
+
+  Release:   {{ .Release.Name }}
+  Namespace: {{ .Release.Namespace }}
+  Image:     {{ .Values.image.repository }}:{{ .Values.image.tag }}
+  Domain:    {{ .Values.domain }}
+
+{{- if eq .Values.domain "example.com" }}
+
+  ⚠️  domain is still the placeholder "example.com".
+      Reinstall with --set domain=yourdomain.tld
+{{- end }}
+
+  🪞 Pull-through cache mirrors:
+{{- range .Values.registries }}
+{{- if .upstream }}
+    - {{ include "docker-proxy.registryHost" (dict "ctx" $ctx "reg" .) }}  →  {{ .upstream }}
+{{- end }}
+{{- end }}
+
+  📦 Hosted private registries (push/pull):
+{{- range .Values.registries }}
+{{- if not .upstream }}
+    - {{ include "docker-proxy.registryHost" (dict "ctx" $ctx "reg" .) }}{{ if include "docker-proxy.authEnabled" (dict "ctx" $ctx "reg" .) }}  (auth required — docker login first){{ end }}
+{{- end }}
+{{- end }}
+
+  ── Usage ──────────────────────────────────────────────────────────────────
+  Mirror a Docker Hub pull (example, hub mirror):
+    docker pull {{ include "docker-proxy.registryHost" (dict "ctx" $ctx "reg" (dict "name" "hub")) }}/library/nginx:latest
+
+  Push to the hosted private registry:
+    docker tag myimage:1.0 {{ .Values.domain | printf "registry.%s" }}/myimage:1.0
+    docker push {{ .Values.domain | printf "registry.%s" }}/myimage:1.0
+
+  ── Routing ────────────────────────────────────────────────────────────────
+{{- if .Values.traefik.enabled }}
+    Exposed via Traefik IngressRoute (entrypoints: {{ .Values.traefik.httpEntryPoint }}/{{ .Values.traefik.httpsEntryPoint }}).
+{{- else if .Values.ingress.enabled }}
+    Exposed via Ingress{{ with .Values.ingress.className }} (class: {{ . }}){{ end }}.
+    For pushing large images through nginx, set:
+      ingress.annotations."nginx\.ingress\.kubernetes\.io/proxy-body-size": "0"
+{{- else }}
+    No ingress enabled — reach a registry via port-forward:
+      kubectl -n {{ .Release.Namespace }} port-forward svc/{{ .Values.namePrefix }}hub {{ .Values.service.port }}:{{ .Values.service.port }}
+{{- end }}
+
+  ── Status ─────────────────────────────────────────────────────────────────
+    kubectl -n {{ .Release.Namespace }} get deploy,svc,pvc -l app.kubernetes.io/part-of={{ include "docker-proxy.name" . }}
+
+{{- if and .Values.traefik.enabled (not .Values.traefik.tlsSecretName) }}
+
+  ⚠️  traefik.tlsSecretName is empty — the HTTPS route has no certificate.
+      A public registry should serve TLS; set traefik.tlsSecretName.
+{{- end }}
+{{- if and .Values.ingress.enabled (not .Values.ingress.tls.enabled) }}
+
+  ⚠️  ingress.tls.enabled is false — registries are served over plain HTTP.
+      A public registry should serve TLS; set ingress.tls.enabled=true.
+{{- end }}
+================================================================================

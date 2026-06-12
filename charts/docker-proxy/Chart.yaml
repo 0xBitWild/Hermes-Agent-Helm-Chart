@@ -1,0 +1,19 @@
+apiVersion: v2
+name: docker-proxy
+description: Helm chart deploying pull-through registry mirror proxies (Docker Hub, GCR, GHCR, Quay, registry.k8s.io, MCR, Elastic, NVCR, ...) plus optional hosted private registries, behind Traefik
+type: application
+version: 0.1.0
+appVersion: "3.0.0"
+keywords:
+  - registry
+  - docker
+  - mirror
+  - pull-through-cache
+  - proxy
+  - oci
+home: https://github.com/dqzboy/Docker-Proxy
+sources:
+  - https://github.com/dqzboy/Docker-Proxy
+  - https://github.com/distribution/distribution
+maintainers:
+  - name: 0xBitwild

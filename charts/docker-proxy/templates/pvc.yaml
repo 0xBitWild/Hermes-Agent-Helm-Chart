@@ -1,0 +1,30 @@
+{{- $ctx := . -}}
+{{- if .Values.persistence.enabled }}
+{{- range .Values.registries }}
+{{- $name := include "docker-proxy.registryName" (dict "ctx" $ctx "reg" .) }}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ $name }}-data
+  labels:
+    {{- include "docker-proxy.registryLabels" (dict "ctx" $ctx "reg" .) | nindent 4 }}
+  {{- if $ctx.Values.persistence.keep }}
+  annotations:
+    helm.sh/resource-policy: keep
+  {{- end }}
+spec:
+  accessModes:
+    {{- toYaml $ctx.Values.persistence.accessModes | nindent 4 }}
+  resources:
+    requests:
+      storage: {{ .size | default $ctx.Values.persistence.size }}
+  {{- if $ctx.Values.persistence.storageClass }}
+  {{- if eq "-" $ctx.Values.persistence.storageClass }}
+  storageClassName: ""
+  {{- else }}
+  storageClassName: {{ $ctx.Values.persistence.storageClass | quote }}
+  {{- end }}
+  {{- end }}
+{{- end }}
+{{- end }}

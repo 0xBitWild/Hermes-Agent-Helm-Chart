@@ -1,0 +1,20 @@
+{{- $ctx := . -}}
+{{- range .Values.registries }}
+{{- $name := include "docker-proxy.registryName" (dict "ctx" $ctx "reg" .) }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "docker-proxy.registryLabels" (dict "ctx" $ctx "reg" .) | nindent 4 }}
+spec:
+  type: {{ $ctx.Values.service.type }}
+  ports:
+    - name: http
+      port: {{ $ctx.Values.service.port }}
+      targetPort: {{ $ctx.Values.containerPort }}
+      protocol: TCP
+  selector:
+    {{- include "docker-proxy.selectorLabels" (dict "ctx" $ctx "reg" .) | nindent 4 }}
+{{- end }}

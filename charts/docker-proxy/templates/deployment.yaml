@@ -1,0 +1,111 @@
+{{- $ctx := . -}}
+{{- range .Values.registries }}
+{{- $reg := . }}
+{{- $name := include "docker-proxy.registryName" (dict "ctx" $ctx "reg" $reg) }}
+{{- $authOn := include "docker-proxy.authEnabled" (dict "ctx" $ctx "reg" $reg) }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "docker-proxy.registryLabels" (dict "ctx" $ctx "reg" $reg) | nindent 4 }}
+spec:
+  replicas: {{ $ctx.Values.replicaCount }}
+  revisionHistoryLimit: {{ $ctx.Values.revisionHistoryLimit }}
+  strategy:
+    {{- toYaml $ctx.Values.strategy | nindent 4 }}
+  selector:
+    matchLabels:
+      {{- include "docker-proxy.selectorLabels" (dict "ctx" $ctx "reg" $reg) | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "docker-proxy.selectorLabels" (dict "ctx" $ctx "reg" $reg) | nindent 8 }}
+      annotations:
+        checksum/config: {{ include "docker-proxy.config" (dict "ctx" $ctx "reg" $reg) | sha256sum }}
+    spec:
+      {{- with $ctx.Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with $ctx.Values.podSecurityContext }}
+      securityContext:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: {{ $name }}
+          image: "{{ $ctx.Values.image.repository }}:{{ $ctx.Values.image.tag }}"
+          imagePullPolicy: {{ $ctx.Values.image.pullPolicy }}
+          {{- with $ctx.Values.securityContext }}
+          securityContext:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with $ctx.Values.extraEnv }}
+          env:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          ports:
+            - name: http
+              containerPort: {{ $ctx.Values.containerPort }}
+              protocol: TCP
+          livenessProbe:
+            tcpSocket:
+              port: {{ $ctx.Values.containerPort }}
+            initialDelaySeconds: {{ $ctx.Values.probes.initialDelaySeconds }}
+            periodSeconds: {{ $ctx.Values.probes.periodSeconds }}
+            timeoutSeconds: {{ $ctx.Values.probes.timeoutSeconds }}
+            successThreshold: {{ $ctx.Values.probes.successThreshold }}
+            failureThreshold: {{ $ctx.Values.probes.failureThreshold }}
+          readinessProbe:
+            tcpSocket:
+              port: {{ $ctx.Values.containerPort }}
+            initialDelaySeconds: {{ $ctx.Values.probes.initialDelaySeconds }}
+            periodSeconds: {{ $ctx.Values.probes.periodSeconds }}
+            timeoutSeconds: {{ $ctx.Values.probes.timeoutSeconds }}
+            successThreshold: {{ $ctx.Values.probes.successThreshold }}
+            failureThreshold: {{ $ctx.Values.probes.failureThreshold }}
+          {{- with $reg.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/registry
+            - name: config
+              mountPath: /etc/distribution/config.yml
+              subPath: config.yml
+            {{- if $authOn }}
+            - name: htpasswd
+              mountPath: /etc/distribution/auth
+              readOnly: true
+            {{- end }}
+      volumes:
+        - name: data
+          {{- if $ctx.Values.persistence.enabled }}
+          persistentVolumeClaim:
+            claimName: {{ $name }}-data
+          {{- else }}
+          emptyDir: {}
+          {{- end }}
+        - name: config
+          configMap:
+            name: {{ $name }}-config
+        {{- if $authOn }}
+        - name: htpasswd
+          secret:
+            secretName: {{ $ctx.Values.auth.existingSecret | default (include "docker-proxy.authSecretName" (dict "ctx" $ctx "reg" $reg)) }}
+        {{- end }}
+      {{- with $ctx.Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with $ctx.Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with $ctx.Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+{{- end }}

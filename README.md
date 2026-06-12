@@ -13,6 +13,7 @@ helm search repo 0xbitwild
 | Chart | Description |
 |-------|-------------|
 | [hermes-web-ui](charts/hermes-web-ui) | [Hermes Web UI](https://github.com/EKKOLearnAI/hermes-web-ui) — a single pod bundling the full [Hermes Agent](https://hermes-agent.nousresearch.com/) (`FROM nousresearch/hermes-agent`), Playwright/Chromium headless browser, and managed gateway. |
+| [docker-proxy](charts/docker-proxy) | Pull-through registry mirror proxies (Docker Hub, GCR, GHCR, Quay, `registry.k8s.io`, MCR, Elastic, NVCR, …) plus optional hosted private registries, behind Traefik. |
 
 ## Usage
 

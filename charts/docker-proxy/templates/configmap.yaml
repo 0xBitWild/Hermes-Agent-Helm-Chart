@@ -1,0 +1,14 @@
+{{- $ctx := . -}}
+{{- range .Values.registries }}
+{{- $name := include "docker-proxy.registryName" (dict "ctx" $ctx "reg" .) }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ $name }}-config
+  labels:
+    {{- include "docker-proxy.registryLabels" (dict "ctx" $ctx "reg" .) | nindent 4 }}
+data:
+  config.yml: |
+{{ include "docker-proxy.config" (dict "ctx" $ctx "reg" .) | indent 4 }}
+{{- end }}
