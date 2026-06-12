@@ -1,4 +1,4 @@
-# Hermes Helm Charts
+# 0xBitwild Helm Charts
 
 Production-ready Helm charts for Kubernetes, served as a Helm repository via GitHub Pages.
 
